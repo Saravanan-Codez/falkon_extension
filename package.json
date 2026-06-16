@@ -3,7 +3,7 @@
   "displayName": "Falkon",
   "icon": "resources/images/falkon_256x256-removebg.png",
   "description": "Professional Python-compatible syntax highlighting and build support for the Falkon language.",
-  "version": "0.1.1",
+  "version": "0.1.0",
   "author": "Falkon Industries",
   "publisher": "Falkon-Industries",
   "engines": {
