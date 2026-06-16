@@ -3,7 +3,7 @@
   "displayName": "Falkon",
   "icon": "resources/images/falkon_256x256-removebg.png",
   "description": "Professional Python-compatible syntax highlighting and build support for the Falkon language.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Falkon Industries",
   "publisher": "Falkon-Industries",
   "engines": {
@@ -13,7 +13,7 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "main": "./out/extension.js",
   "scripts": {
@@ -23,7 +23,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "vsix": "vsce package --allow-missing-repository --no-dependencies"
+    "vsix": "vsce package --allow-missing-repository --no-dependencies --allow-star-activation"
   },
   "devDependencies": {
     "@types/vscode": "^1.90.0",
@@ -93,6 +93,10 @@
       {
         "command": "falkon.openSettings",
         "title": "Falkon: Open Extension Settings"
+      },
+      {
+        "command": "falkon.showWalkthrough",
+        "title": "Falkon: Show Welcome Walkthrough"
       }
     ],
     "languages": [

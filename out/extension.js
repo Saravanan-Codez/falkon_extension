@@ -194,6 +194,11 @@ function activate(context) {
         vscode.commands.executeCommand("workbench.action.openSettings", "falkon");
     });
     context.subscriptions.push(openSettingsCommand);
+    // Register showWalkthrough command
+    const showWalkthroughCommand = vscode.commands.registerCommand("falkon.showWalkthrough", () => {
+        vscode.commands.executeCommand("workbench.action.openWalkthrough", "Falkon-Industries.falkon-language#falkon.walkthrough", false);
+    });
+    context.subscriptions.push(showWalkthroughCommand);
     // Monitor editor changes to show/hide status bar item
     const updateStatusBarVisibility = (editor) => {
         if (editor && isFalkonFile(editor.document.uri.fsPath)) {
@@ -207,11 +212,12 @@ function activate(context) {
     updateStatusBarVisibility(vscode.window.activeTextEditor);
     // Initial check on activation
     checkFalkonInstallation(false);
-    // Show welcome walkthrough on first install
-    const hasShownWelcome = context.globalState.get("hasShownWelcome", false);
-    if (!hasShownWelcome) {
+    // Show welcome walkthrough on installation or version change
+    const currentVersion = context.extension.packageJSON.version;
+    const lastVersion = context.globalState.get("lastVersion");
+    if (lastVersion !== currentVersion) {
         vscode.commands.executeCommand("workbench.action.openWalkthrough", "Falkon-Industries.falkon-language#falkon.walkthrough", false);
-        context.globalState.update("hasShownWelcome", true);
+        context.globalState.update("lastVersion", currentVersion);
     }
 }
 function deactivate() { }
