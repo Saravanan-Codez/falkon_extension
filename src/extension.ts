@@ -144,6 +144,10 @@ function checkFalkonInstallation(showNotification: boolean): Promise<boolean> {
 export function activate(context: vscode.ExtensionContext): void {
   console.log("Falkon extension is now active!");
 
+  const myExtension = vscode.extensions.all.find(ext => ext.extensionPath === context.extensionPath);
+  const extensionId = myExtension ? myExtension.id : "falkon-industries.falkon-language";
+  const currentVersion = myExtension ? myExtension.packageJSON.version : "0.1.0";
+
   // Create and configure status bar item
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = "falkon.checkCli";
@@ -195,7 +199,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Register showWalkthrough command
   const showWalkthroughCommand = vscode.commands.registerCommand("falkon.showWalkthrough", () => {
-    vscode.commands.executeCommand("workbench.action.openWalkthrough", `${context.extension.id.toLowerCase()}#falkon.walkthrough`, false);
+    vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId.toLowerCase()}#falkon.walkthrough`, false);
   });
   context.subscriptions.push(showWalkthroughCommand);
 
@@ -217,12 +221,12 @@ export function activate(context: vscode.ExtensionContext): void {
   checkFalkonInstallation(false);
 
   // Show welcome walkthrough on installation, version change, or new workspace session (with delay to ensure UI is ready)
-  const currentVersion = context.extension.packageJSON.version;
+  // Show welcome walkthrough on installation, version change, or new workspace session (with delay to ensure UI is ready)
   const lastVersion = context.globalState.get<string>("lastVersion");
   const hasShownInSession = context.workspaceState.get<boolean>("hasShownInSession", false);
   if (lastVersion !== currentVersion || !hasShownInSession) {
     setTimeout(() => {
-      vscode.commands.executeCommand("workbench.action.openWalkthrough", `${context.extension.id.toLowerCase()}#falkon.walkthrough`, false);
+      vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId.toLowerCase()}#falkon.walkthrough`, false);
     }, 1000);
     context.globalState.update("lastVersion", currentVersion);
     context.workspaceState.update("hasShownInSession", true);
