@@ -240,23 +240,26 @@ function activate(context) {
     // Run initial silent CLI check to set status bar state
     checkFalkonInstallation(statusBarItem, false);
     // --- Walkthrough auto-open ---
-    // We use "*" activationEvents so the extension activates immediately after
-    // a mid-session VSIX install (onStartupFinished has already fired by then).
+    // We use "onStartupFinished" so VS Code guarantees ALL contribution points
+    // (including walkthroughs from package.json) are registered before activate()
+    // runs. This means openWalkthrough will always find our walkthrough by ID.
     //
-    // A 1500ms delay is required: when VS Code installs a VSIX mid-session it
-    // reloads the extension host while the workbench UI is still settling.
-    // Calling openWalkthrough synchronously during that window is a silent no-op.
-    // 1500ms is enough for the Welcome panel host to initialise without feeling slow.
+    // "onStartupFinished" also fires when VS Code restarts the extension host
+    // after a mid-session VSIX install, so both first-install and reinstall are
+    // covered without needing "* " activation.
     //
-    // Condition: show on EVERY new process instance (hasShownInSession = false on
-    // each fresh extension host load) OR when the version changes.
+    // A 500ms delay is kept as a safety margin for the Welcome panel's own
+    // rendering cycle. This is small enough not to feel slow.
+    //
+    // Condition: show on every fresh extension host load (!hasShownInSession)
+    // OR when the version changes (update scenario).
     const lastVersion = context.globalState.get("lastVersion");
     if (!hasShownInSession || lastVersion !== currentVersion) {
         hasShownInSession = true;
         context.globalState.update("lastVersion", currentVersion);
         setTimeout(() => {
             vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId}#falkon.walkthrough`, false);
-        }, 1500);
+        }, 500);
     }
 }
 function deactivate() { }
