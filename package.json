@@ -1,11 +1,11 @@
 {
-  "name": "cimple-language",
-  "displayName": "Cimple",
-  "icon": "resources/images/cimple_icon-removebg.png",
-  "description": "Professional Python-compatible syntax highlighting and build support for the Cimple language.",
-  "version": "0.0.5",
-  "author": "Cimple Industries",
-  "publisher": "Cimple-Industries",
+  "name": "falkon-language",
+  "displayName": "Falkon",
+  "icon": "resources/images/falkon_256x256-removebg.png",
+  "description": "Professional Python-compatible syntax highlighting and build support for the Falkon language.",
+  "version": "0.1.0",
+  "author": "Falkon Industries",
+  "publisher": "Falkon-Industries",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -35,42 +35,86 @@
     "@vscode/test-electron": "^2.4.0"
   },
   "contributes": {
+    "configuration": {
+      "title": "Falkon",
+      "properties": {
+        "falkon.shortcutPreset": {
+          "type": "string",
+          "default": "ctrl+f5",
+          "enum": [
+            "ctrl+f5",
+            "f4",
+            "f7",
+            "none"
+          ],
+          "enumDescriptions": [
+            "Trigger build and run with Ctrl+F5",
+            "Trigger build and run with F4",
+            "Trigger build and run with F7",
+            "Disable default shortcut presets (use custom keybindings instead)"
+          ],
+          "description": "Select a default shortcut preset to build and run the active Falkon file."
+        },
+        "falkon.enableDebugIntercept": {
+          "type": "boolean",
+          "default": true,
+          "description": "Intercept the VS Code standard F5/Ctrl+F5 debugging launch triggers to build and run the active file."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "falkon.buildAndRun",
+        "key": "ctrl+f5",
+        "when": "editorTextFocus && editorLangId == falkon && config.falkon.shortcutPreset == 'ctrl+f5'"
+      },
+      {
+        "command": "falkon.buildAndRun",
+        "key": "f4",
+        "when": "editorTextFocus && editorLangId == falkon && config.falkon.shortcutPreset == 'f4'"
+      },
+      {
+        "command": "falkon.buildAndRun",
+        "key": "f7",
+        "when": "editorTextFocus && editorLangId == falkon && config.falkon.shortcutPreset == 'f7'"
+      }
+    ],
     "commands": [
       {
-        "command": "cimple.buildAndRun",
-        "title": "Cimple: Build and Run Active File"
+        "command": "falkon.buildAndRun",
+        "title": "Falkon: Build and Run Active File"
       }
     ],
     "languages": [
       {
-        "id": "cimple",
+        "id": "falkon",
         "aliases": [
-          "Cimple",
-          "cimple"
+          "Falkon",
+          "falkon"
         ],
         "extensions": [
-          ".cimp"
+          ".flk"
         ],
         "icon": {
-          "light": "./resources/images/cimple_icon-removebg.png",
-          "dark": "./resources/images/cimple_icon-removebg.png"
+          "light": "./resources/images/falkon_256x256-removebg.png",
+          "dark": "./resources/images/falkon_256x256-removebg.png"
         },
         "configuration": "./resources/language-configuration.json"
       }
     ],
     "grammars": [
       {
-        "language": "cimple",
-        "scopeName": "source.cimple",
-        "path": "./resources/syntaxes/cimple.tmLanguage.json"
+        "language": "falkon",
+        "scopeName": "source.falkon",
+        "path": "./resources/syntaxes/falkon.tmLanguage.json"
       }
     ],
     "debuggers": [
       {
-        "type": "cimple",
-        "label": "Cimple Debug",
+        "type": "falkon",
+        "label": "Falkon Debug",
         "languages": [
-          "cimple"
+          "falkon"
         ],
         "configurationAttributes": {
           "launch": {
@@ -80,8 +124,8 @@
         },
         "initialConfigurations": [
           {
-            "type": "cimple",
-            "name": "Cimple: Run Active File",
+            "type": "falkon",
+            "name": "Falkon: Run Active File",
             "request": "launch"
           }
         ]
