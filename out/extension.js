@@ -239,17 +239,24 @@ function activate(context) {
     updateStatusBarVisibility(vscode.window.activeTextEditor);
     // Run initial silent CLI check to set status bar state
     checkFalkonInstallation(statusBarItem, false);
-    // --- FIX 1: Walkthrough auto-open ---
-    // activationEvents now includes "onStartupFinished" so VS Code guarantees
-    // the workbench UI is fully ready when this code runs — no fragile setTimeout needed.
-    // We still keep a version-change check via globalState so it re-shows after updates,
-    // and a per-process session check so it shows on every new VS Code window/reload.
+    // --- Walkthrough auto-open ---
+    // We use "*" activationEvents so the extension activates immediately after
+    // a mid-session VSIX install (onStartupFinished has already fired by then).
+    //
+    // A 1500ms delay is required: when VS Code installs a VSIX mid-session it
+    // reloads the extension host while the workbench UI is still settling.
+    // Calling openWalkthrough synchronously during that window is a silent no-op.
+    // 1500ms is enough for the Welcome panel host to initialise without feeling slow.
+    //
+    // Condition: show on EVERY new process instance (hasShownInSession = false on
+    // each fresh extension host load) OR when the version changes.
     const lastVersion = context.globalState.get("lastVersion");
-    if (lastVersion !== currentVersion || !hasShownInSession) {
-        // No timeout needed: onStartupFinished guarantees the UI is ready
-        vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId}#falkon.walkthrough`, false);
-        context.globalState.update("lastVersion", currentVersion);
+    if (!hasShownInSession || lastVersion !== currentVersion) {
         hasShownInSession = true;
+        context.globalState.update("lastVersion", currentVersion);
+        setTimeout(() => {
+            vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId}#falkon.walkthrough`, false);
+        }, 1500);
     }
 }
 function deactivate() { }
