@@ -39,6 +39,7 @@ const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const cp = __importStar(require("child_process"));
 const FALKON_EXTENSIONS = new Set([".flk"]);
+let hasShownInSession = false;
 function isFalkonFile(fsPath) {
     return FALKON_EXTENSIONS.has(path.extname(fsPath).toLowerCase());
 }
@@ -215,16 +216,14 @@ function activate(context) {
     updateStatusBarVisibility(vscode.window.activeTextEditor);
     // Initial check on activation
     checkFalkonInstallation(false);
-    // Show welcome walkthrough on installation, version change, or new workspace session (with delay to ensure UI is ready)
-    // Show welcome walkthrough on installation, version change, or new workspace session (with delay to ensure UI is ready)
+    // Show welcome walkthrough on installation, version change, or new window/workspace session (with delay to ensure UI is ready)
     const lastVersion = context.globalState.get("lastVersion");
-    const hasShownInSession = context.workspaceState.get("hasShownInSession", false);
     if (lastVersion !== currentVersion || !hasShownInSession) {
         setTimeout(() => {
             vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId.toLowerCase()}#falkon.walkthrough`, false);
-        }, 1000);
+        }, 3000); // 3-second delay ensures VS Code is fully loaded and ready
         context.globalState.update("lastVersion", currentVersion);
-        context.workspaceState.update("hasShownInSession", true);
+        hasShownInSession = true;
     }
 }
 function deactivate() { }
