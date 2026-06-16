@@ -13,8 +13,7 @@
     "Programming Languages"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onLanguage:falkon"
+    "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "scripts": {
