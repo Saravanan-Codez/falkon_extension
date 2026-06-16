@@ -40,7 +40,7 @@
       "properties": {
         "falkon.shortcutPreset": {
           "type": "string",
-          "default": "ctrl+f5",
+          "default": "f4",
           "enum": [
             "ctrl+f5",
             "f4",
@@ -83,6 +83,10 @@
       {
         "command": "falkon.buildAndRun",
         "title": "Falkon: Build and Run Active File"
+      },
+      {
+        "command": "falkon.checkCli",
+        "title": "Falkon: Verify CLI Installation"
       }
     ],
     "languages": [
@@ -127,6 +131,39 @@
             "type": "falkon",
             "name": "Falkon: Run Active File",
             "request": "launch"
+          }
+        ]
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "falkon.walkthrough",
+        "title": "Get Started with Falkon",
+        "description": "Learn how to configure and use the Falkon extension.",
+        "steps": [
+          {
+            "id": "falkon.welcomeStep",
+            "title": "Welcome to Falkon",
+            "description": "Introduction to Falkon extension features.",
+            "media": {
+              "markdown": "resources/walkthrough/welcome.md"
+            }
+          },
+          {
+            "id": "falkon.installCliStep",
+            "title": "Verify Falkon CLI",
+            "description": "Ensure the Falkon CLI compiler is installed on your system.",
+            "media": {
+              "markdown": "resources/walkthrough/install_cli.md"
+            }
+          },
+          {
+            "id": "falkon.configureShortcutStep",
+            "title": "Configure Build & Run Shortcut",
+            "description": "Set your preferred shortcut preset.",
+            "media": {
+              "markdown": "resources/walkthrough/configure_shortcuts.md"
+            }
           }
         ]
       }

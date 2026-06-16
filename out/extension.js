@@ -37,6 +37,7 @@ exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
+const cp = __importStar(require("child_process"));
 const FALKON_EXTENSIONS = new Set([".flk"]);
 function isFalkonFile(fsPath) {
     return FALKON_EXTENSIONS.has(path.extname(fsPath).toLowerCase());
@@ -125,10 +126,41 @@ class FalkonDebugConfigurationProvider {
         return undefined; // Abort the actual debug session launch as we handle it via terminal
     }
 }
+let statusBarItem;
+function checkFalkonInstallation(showNotification) {
+    return new Promise((resolve) => {
+        cp.exec("falkon -v", (error, stdout, stderr) => {
+            if (error) {
+                statusBarItem.text = `$(alert) Falkon: CLI Missing`;
+                statusBarItem.tooltip = `Falkon compiler CLI ('falkon') not found in PATH. Click to verify.`;
+                statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+                if (showNotification) {
+                    vscode.window.showErrorMessage("Falkon compiler CLI ('falkon') could not be found in your system's PATH. Please ensure it is installed and added to PATH.");
+                }
+                resolve(false);
+            }
+            else {
+                const version = stdout.trim() || stderr.trim() || "unknown version";
+                statusBarItem.text = `$(check) Falkon: Ready`;
+                statusBarItem.tooltip = `Falkon compiler is ready.\nVersion info: ${version}`;
+                statusBarItem.backgroundColor = undefined;
+                if (showNotification) {
+                    vscode.window.showInformationMessage(`Falkon compiler CLI is ready! (${version})`);
+                }
+                resolve(true);
+            }
+        });
+    });
+}
 function activate(context) {
     console.log("Falkon extension is now active!");
+    // Create and configure status bar item
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+    statusBarItem.command = "falkon.checkCli";
+    context.subscriptions.push(statusBarItem);
     // Register the debug configuration provider
     context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('falkon', new FalkonDebugConfigurationProvider()));
+    // Register buildAndRun command
     const runCommand = vscode.commands.registerCommand("falkon.buildAndRun", async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -142,6 +174,30 @@ function activate(context) {
         await buildAndRun(editor.document);
     });
     context.subscriptions.push(runCommand);
+    // Register checkCli command
+    const checkCliCommand = vscode.commands.registerCommand("falkon.checkCli", async () => {
+        await checkFalkonInstallation(true);
+    });
+    context.subscriptions.push(checkCliCommand);
+    // Monitor editor changes to show/hide status bar item
+    const updateStatusBarVisibility = (editor) => {
+        if (editor && isFalkonFile(editor.document.uri.fsPath)) {
+            statusBarItem.show();
+        }
+        else {
+            statusBarItem.hide();
+        }
+    };
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(updateStatusBarVisibility));
+    updateStatusBarVisibility(vscode.window.activeTextEditor);
+    // Initial check on activation
+    checkFalkonInstallation(false);
+    // Show welcome walkthrough on first install
+    const hasShownWelcome = context.globalState.get("hasShownWelcome", false);
+    if (!hasShownWelcome) {
+        vscode.commands.executeCommand("workbench.action.openWalkthrough", "Falkon-Industries.falkon-language#falkon.walkthrough", false);
+        context.globalState.update("hasShownWelcome", true);
+    }
 }
 function deactivate() { }
 //# sourceMappingURL=extension.js.map
