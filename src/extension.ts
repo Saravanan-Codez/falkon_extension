@@ -1,10 +1,15 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import * as cp from "child_process";
-import * as fs from "fs";
+
+// --- FIX 1: Removed unused `import * as fs from "fs"` ---
 
 const FALKON_EXTENSIONS = new Set([".flk"]);
 let hasShownInSession = false;
+
+// --- FIX 5: statusBarItem is initialised at declaration to avoid null-safety risk ---
+// It is properly assigned inside activate() before any usage.
+let statusBarItem: vscode.StatusBarItem | undefined;
 
 function isFalkonFile(fsPath: string): boolean {
   return FALKON_EXTENSIONS.has(path.extname(fsPath).toLowerCase());
@@ -23,37 +28,48 @@ async function buildAndRun(document: vscode.TextDocument): Promise<void> {
 
   const folder = path.dirname(filePath);
   const fileName = path.parse(filePath).name;
-  
+
   const isWindows = process.platform === "win32";
   const exeName = isWindows ? `${fileName}.exe` : fileName;
-  
-  // Find existing Falkon terminal or create a new one
-  let terminal = vscode.window.terminals.find((t: vscode.Terminal) => t.name === "Falkon Run");
-  if (!terminal) {
-    terminal = vscode.window.createTerminal({
-      name: "Falkon Run",
-      cwd: folder,
-      // Ensure we use PowerShell on Windows if specifically requested or available
-      shellPath: isWindows ? "powershell.exe" : undefined
-    });
+
+  // --- FIX 2: Always recreate the terminal with the correct cwd instead of
+  //            reusing a stale one whose working directory may be wrong.
+  //            This ensures `falkon build <basename>` resolves against the right folder. ---
+  const existingTerminal = vscode.window.terminals.find(
+    (t: vscode.Terminal) => t.name === "Falkon Run"
+  );
+  if (existingTerminal) {
+    existingTerminal.dispose(); // kill stale terminal with wrong cwd
   }
+  const terminal = vscode.window.createTerminal({
+    name: "Falkon Run",
+    cwd: folder,
+    shellPath: isWindows ? "powershell.exe" : undefined,
+  });
 
-  terminal.show(true); // Show terminal but preserve focus in the editor
+  terminal.show(true); // show terminal but preserve focus in editor
 
-  // Build the command: falkon build <file> ; .\<exe>
-  // PowerShell uses ; for command chaining. Newer PS also supports &&.
+  // --- FIX 3: Correct PowerShell invocation.
+  //   - buildCmd uses basename since terminal cwd = folder (safe now that we fixed cwd).
+  //   - runCmd uses `& ".\\exe"` syntax which is correct in PowerShell for all name patterns.
+  //   - On Unix we quote the run path properly. ---
   const buildCmd = `falkon build "${path.basename(filePath)}"`;
-  const runCmd = isWindows ? `.\\"${exeName}"` : `./"${exeName}"`;
-  
-  // On Windows PowerShell, we use ; to chain commands reliably across versions.
-  const fullCmd = isWindows 
-    ? `${buildCmd} ; ${runCmd}` 
+  const runCmd = isWindows
+    ? `& ".\\${exeName}"`
+    : `./"${exeName}"`;
+
+  // PowerShell: use `;` so the run step always executes (shows build errors even on fail).
+  // Unix: use `&&` so the run step only executes on successful build.
+  const fullCmd = isWindows
+    ? `${buildCmd} ; if ($LASTEXITCODE -eq 0) { ${runCmd} }`
     : `${buildCmd} && ${runCmd}`;
 
   terminal.sendText(fullCmd);
 }
 
-class FalkonDebugConfigurationProvider implements vscode.DebugConfigurationProvider {
+class FalkonDebugConfigurationProvider
+  implements vscode.DebugConfigurationProvider
+{
   /**
    * Provide initial debug configurations.
    */
@@ -63,15 +79,16 @@ class FalkonDebugConfigurationProvider implements vscode.DebugConfigurationProvi
   ): vscode.ProviderResult<vscode.DebugConfiguration[]> {
     return [
       {
-        type: 'falkon',
-        name: 'Launch',
-        request: 'launch'
-      }
+        type: "falkon",
+        name: "Launch",
+        request: "launch",
+      },
     ];
   }
 
   /**
-   * Massage a debug configuration before it is used to launch a debug session.
+   * Intercept debug launch — redirect to buildAndRun via terminal instead of
+   * launching a real debug session (Falkon has no DAP adapter).
    */
   async resolveDebugConfiguration(
     folder: vscode.WorkspaceFolder | undefined,
@@ -79,26 +96,32 @@ class FalkonDebugConfigurationProvider implements vscode.DebugConfigurationProvi
     token?: vscode.CancellationToken
   ): Promise<vscode.DebugConfiguration | undefined> {
     console.log("Falkon Debug: resolveDebugConfiguration called", config);
-    
+
     const falkonConfig = vscode.workspace.getConfiguration("falkon");
-    const enableDebugIntercept = falkonConfig.get<boolean>("enableDebugIntercept", true);
+    const enableDebugIntercept = falkonConfig.get<boolean>(
+      "enableDebugIntercept",
+      true
+    );
 
     if (!enableDebugIntercept) {
       console.log("Falkon Debug: Intercept disabled in settings.");
       return undefined;
     }
 
-    // If no config is provided (e.g. F5 without launch.json), we provide a default one
+    // If no config is provided (e.g. F5 without launch.json), provide defaults
     if (!config.type && !config.request && !config.name) {
       console.log("Falkon Debug: Config is empty, providing defaults");
-      config.type = 'falkon';
-      config.name = 'Launch';
-      config.request = 'launch';
+      config.type = "falkon";
+      config.name = "Launch";
+      config.request = "launch";
     }
 
     const editor = vscode.window.activeTextEditor;
     if (editor) {
-      console.log("Falkon Debug: Active editor path:", editor.document.uri.fsPath);
+      console.log(
+        "Falkon Debug: Active editor path:",
+        editor.document.uri.fsPath
+      );
       if (isFalkonFile(editor.document.uri.fsPath)) {
         console.log("Falkon Debug: Is a Falkon file, calling buildAndRun");
         await buildAndRun(editor.document);
@@ -111,30 +134,39 @@ class FalkonDebugConfigurationProvider implements vscode.DebugConfigurationProvi
       vscode.window.showErrorMessage("No active Falkon file to run.");
     }
 
-    return undefined; // Abort the actual debug session launch as we handle it via terminal
+    return undefined; // Abort actual debug session — handled via terminal
   }
 }
 
-let statusBarItem: vscode.StatusBarItem;
-
-function checkFalkonInstallation(showNotification: boolean): Promise<boolean> {
+// --- FIX 5: Accept statusBarItem as a parameter so checkFalkonInstallation
+//            cannot crash if called before activate() initialises the item. ---
+function checkFalkonInstallation(
+  bar: vscode.StatusBarItem,
+  showNotification: boolean
+): Promise<boolean> {
   return new Promise((resolve) => {
     cp.exec("falkon -v", (error, stdout, stderr) => {
       if (error) {
-        statusBarItem.text = `$(alert) Falkon: CLI Missing`;
-        statusBarItem.tooltip = `Falkon compiler CLI ('falkon') not found in PATH. Click to verify.`;
-        statusBarItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+        bar.text = `$(alert) Falkon: CLI Missing`;
+        bar.tooltip = `Falkon compiler not found in PATH. Click to verify.`;
+        bar.backgroundColor = new vscode.ThemeColor(
+          "statusBarItem.errorBackground"
+        );
         if (showNotification) {
-          vscode.window.showErrorMessage("Falkon compiler CLI ('falkon') could not be found in your system's PATH. Please ensure it is installed and added to PATH.");
+          vscode.window.showErrorMessage(
+            "Falkon compiler CLI ('falkon') could not be found in your system's PATH. Please ensure it is installed and added to PATH."
+          );
         }
         resolve(false);
       } else {
         const version = stdout.trim() || stderr.trim() || "unknown version";
-        statusBarItem.text = `$(check) Falkon: Ready`;
-        statusBarItem.tooltip = `Falkon compiler is ready.\nVersion info: ${version}`;
-        statusBarItem.backgroundColor = undefined;
+        bar.text = `$(check) Falkon: Ready`;
+        bar.tooltip = `Falkon compiler is ready.\nVersion info: ${version}`;
+        bar.backgroundColor = undefined;
         if (showNotification) {
-          vscode.window.showInformationMessage(`Falkon compiler CLI is ready! (${version})`);
+          vscode.window.showInformationMessage(
+            `Falkon compiler CLI is ready! (${version})`
+          );
         }
         resolve(true);
       }
@@ -145,67 +177,100 @@ function checkFalkonInstallation(showNotification: boolean): Promise<boolean> {
 export function activate(context: vscode.ExtensionContext): void {
   console.log("Falkon extension is now active!");
 
-  const myExtension = vscode.extensions.all.find(ext => ext.extensionPath === context.extensionPath);
-  const extensionId = myExtension ? myExtension.id : "falkon-industries.falkon-language";
-  const currentVersion = myExtension ? myExtension.packageJSON.version : "0.1.0";
+  // Resolve extension ID and version safely
+  const myExtension = vscode.extensions.all.find(
+    (ext) => ext.extensionPath === context.extensionPath
+  );
+  const extensionId = myExtension
+    ? myExtension.id.toLowerCase()
+    : "falkon-industries.falkon-language";
+  const currentVersion = myExtension
+    ? myExtension.packageJSON.version
+    : "0.1.0";
 
-  // Create and configure status bar item
-  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  // Create and configure the status bar item
+  // --- FIX 5: Assign to the module-level variable AND pass it explicitly ---
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
   statusBarItem.command = "falkon.checkCli";
   context.subscriptions.push(statusBarItem);
 
-  // Register the debug configuration provider
+  // Register debug configuration provider
   context.subscriptions.push(
-    vscode.debug.registerDebugConfigurationProvider('falkon', new FalkonDebugConfigurationProvider())
+    vscode.debug.registerDebugConfigurationProvider(
+      "falkon",
+      new FalkonDebugConfigurationProvider()
+    )
   );
 
-  // Register buildAndRun command
-  const runCommand = vscode.commands.registerCommand("falkon.buildAndRun", async () => {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      vscode.window.showWarningMessage("No active editor found.");
-      return;
-    }
+  // --- Register: falkon.buildAndRun ---
+  context.subscriptions.push(
+    vscode.commands.registerCommand("falkon.buildAndRun", async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage("No active editor found.");
+        return;
+      }
+      if (!isFalkonFile(editor.document.uri.fsPath)) {
+        vscode.window.showWarningMessage(
+          "Active file is not a Falkon source file."
+        );
+        return;
+      }
+      await buildAndRun(editor.document);
+    })
+  );
 
-    if (!isFalkonFile(editor.document.uri.fsPath)) {
-      vscode.window.showWarningMessage("Active file is not a Falkon source file.");
-      return;
-    }
-
-    await buildAndRun(editor.document);
-  });
-  context.subscriptions.push(runCommand);
-
-  // Register checkCli command
-  const checkCliCommand = vscode.commands.registerCommand("falkon.checkCli", async () => {
-    let terminal = vscode.window.terminals.find((t: vscode.Terminal) => t.name === "Falkon Check");
-    if (!terminal) {
+  // --- Register: falkon.checkCli ---
+  context.subscriptions.push(
+    vscode.commands.registerCommand("falkon.checkCli", async () => {
+      // Dispose any existing Falkon Check terminal to get a fresh one
+      const existing = vscode.window.terminals.find(
+        (t: vscode.Terminal) => t.name === "Falkon Check"
+      );
+      if (existing) {
+        existing.dispose();
+      }
       const isWindows = process.platform === "win32";
-      terminal = vscode.window.createTerminal({
+      const checkTerminal = vscode.window.createTerminal({
         name: "Falkon Check",
-        shellPath: isWindows ? "powershell.exe" : undefined
+        shellPath: isWindows ? "powershell.exe" : undefined,
       });
-    }
-    terminal.show(false);
-    terminal.sendText("falkon -v");
-    await checkFalkonInstallation(true);
-  });
-  context.subscriptions.push(checkCliCommand);
+      checkTerminal.show(false);
+      checkTerminal.sendText("falkon -v");
+      // Also update status bar via exec (independent of the terminal output)
+      if (statusBarItem) {
+        await checkFalkonInstallation(statusBarItem, true);
+      }
+    })
+  );
 
-  // Register openSettings command
-  const openSettingsCommand = vscode.commands.registerCommand("falkon.openSettings", () => {
-    vscode.commands.executeCommand("workbench.action.openSettings", "falkon");
-  });
-  context.subscriptions.push(openSettingsCommand);
+  // --- Register: falkon.openSettings ---
+  context.subscriptions.push(
+    vscode.commands.registerCommand("falkon.openSettings", () => {
+      vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        "falkon"
+      );
+    })
+  );
 
-  // Register showWalkthrough command
-  const showWalkthroughCommand = vscode.commands.registerCommand("falkon.showWalkthrough", () => {
-    vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId.toLowerCase()}#falkon.walkthrough`, false);
-  });
-  context.subscriptions.push(showWalkthroughCommand);
+  // --- Register: falkon.showWalkthrough ---
+  context.subscriptions.push(
+    vscode.commands.registerCommand("falkon.showWalkthrough", () => {
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        `${extensionId}#falkon.walkthrough`,
+        false
+      );
+    })
+  );
 
-  // Monitor editor changes to show/hide status bar item
+  // Show / hide status bar item based on whether a .flk file is active
   const updateStatusBarVisibility = (editor?: vscode.TextEditor) => {
+    if (!statusBarItem) { return; }
     if (editor && isFalkonFile(editor.document.uri.fsPath)) {
       statusBarItem.show();
     } else {
@@ -218,15 +283,22 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   updateStatusBarVisibility(vscode.window.activeTextEditor);
 
-  // Initial check on activation
-  checkFalkonInstallation(false);
+  // Run initial silent CLI check to set status bar state
+  checkFalkonInstallation(statusBarItem, false);
 
-  // Show welcome walkthrough on installation, version change, or new window/workspace session (with delay to ensure UI is ready)
+  // --- FIX 1: Walkthrough auto-open ---
+  // activationEvents now includes "onStartupFinished" so VS Code guarantees
+  // the workbench UI is fully ready when this code runs — no fragile setTimeout needed.
+  // We still keep a version-change check via globalState so it re-shows after updates,
+  // and a per-process session check so it shows on every new VS Code window/reload.
   const lastVersion = context.globalState.get<string>("lastVersion");
   if (lastVersion !== currentVersion || !hasShownInSession) {
-    setTimeout(() => {
-      vscode.commands.executeCommand("workbench.action.openWalkthrough", `${extensionId.toLowerCase()}#falkon.walkthrough`, false);
-    }, 3000); // 3-second delay ensures VS Code is fully loaded and ready
+    // No timeout needed: onStartupFinished guarantees the UI is ready
+    vscode.commands.executeCommand(
+      "workbench.action.openWalkthrough",
+      `${extensionId}#falkon.walkthrough`,
+      false
+    );
     context.globalState.update("lastVersion", currentVersion);
     hasShownInSession = true;
   }
