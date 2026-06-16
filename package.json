@@ -154,7 +154,7 @@
           {
             "id": "falkon.welcomeStep",
             "title": "Welcome to Falkon",
-            "description": "Introduction to Falkon extension features.",
+            "description": "This welcome guide will run you through the first-time installation checks and settings.",
             "media": {
               "markdown": "resources/walkthrough/welcome.md"
             }
@@ -162,18 +162,25 @@
           {
             "id": "falkon.installCliStep",
             "title": "Verify Falkon CLI",
-            "description": "Ensure the Falkon CLI compiler is installed on your system.",
+            "description": "Verify that 'falkon' is available in your PATH. Click the 'Verify' button on the right, or run 'Falkon: Verify CLI Installation' from the Command Palette (Ctrl+Shift+P).",
             "media": {
               "markdown": "resources/walkthrough/install_cli.md"
-            }
+            },
+            "completionEvents": [
+              "onCommand:falkon.checkCli"
+            ]
           },
           {
             "id": "falkon.configureShortcutStep",
             "title": "Configure Build & Run Shortcut",
-            "description": "Set your preferred shortcut preset.",
+            "description": "Select your shortcut preset (default: F4). Click the settings button on the right, or run 'Falkon: Open Extension Settings' from the Command Palette.",
             "media": {
               "markdown": "resources/walkthrough/configure_shortcuts.md"
-            }
+            },
+            "completionEvents": [
+              "onCommand:falkon.openSettings",
+              "onSettingChanged:falkon.shortcutPreset"
+            ]
           }
         ]
       }
