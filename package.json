@@ -153,19 +153,13 @@
         "steps": [
           {
             "id": "falkon.welcomeStep",
-            "title": "Welcome to Falkon",
-            "description": "This welcome guide will run you through the first-time installation checks and settings.",
-            "media": {
-              "markdown": "resources/walkthrough/welcome.md"
-            }
+            "title": "Welcome to Falkon 🚀",
+            "description": "Thank you for installing Falkon! This extension provides Python-compatible syntax highlighting, file icons, and build & run support for your `.flk` files.\n\nPress **F4** to build and run the active file. Follow the steps below to verify your installation and customize settings."
           },
           {
             "id": "falkon.installCliStep",
             "title": "Verify Falkon CLI",
-            "description": "Verify that 'falkon' is available in your PATH. Click the 'Verify' button on the right, or run 'Falkon: Verify CLI Installation' from the Command Palette (Ctrl+Shift+P).",
-            "media": {
-              "markdown": "resources/walkthrough/install_cli.md"
-            },
+            "description": "Before running scripts, make sure the `falkon` compiler is added to your system's PATH variable.\n\n[Click Here to Run PATH Verification](command:falkon.checkCli)\n\n*(This will pop up a terminal window running 'falkon -v' and check status bar status)*",
             "completionEvents": [
               "onCommand:falkon.checkCli"
             ]
@@ -173,10 +167,7 @@
           {
             "id": "falkon.configureShortcutStep",
             "title": "Configure Build & Run Shortcut",
-            "description": "Select your shortcut preset (default: F4). Click the settings button on the right, or run 'Falkon: Open Extension Settings' from the Command Palette.",
-            "media": {
-              "markdown": "resources/walkthrough/configure_shortcuts.md"
-            },
+            "description": "The default build and run trigger is **F4**. You can change this to presets like `f4`, `ctrl+f5`, or `f7` from settings.\n\n[Click Here to Open Settings](command:falkon.openSettings)\n\n*(Or open Command Palette and run 'Falkon: Open Extension Settings')*",
             "completionEvents": [
               "onCommand:falkon.openSettings",
               "onSettingChanged:falkon.shortcutPreset"

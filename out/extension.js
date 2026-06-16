@@ -212,12 +212,14 @@ function activate(context) {
     updateStatusBarVisibility(vscode.window.activeTextEditor);
     // Initial check on activation
     checkFalkonInstallation(false);
-    // Show welcome walkthrough on installation, version change, or new workspace session
+    // Show welcome walkthrough on installation, version change, or new workspace session (with delay to ensure UI is ready)
     const currentVersion = context.extension.packageJSON.version;
     const lastVersion = context.globalState.get("lastVersion");
     const hasShownInSession = context.workspaceState.get("hasShownInSession", false);
     if (lastVersion !== currentVersion || !hasShownInSession) {
-        vscode.commands.executeCommand("workbench.action.openWalkthrough", "Falkon-Industries.falkon-language#falkon.walkthrough", false);
+        setTimeout(() => {
+            vscode.commands.executeCommand("workbench.action.openWalkthrough", "Falkon-Industries.falkon-language#falkon.walkthrough", false);
+        }, 1000);
         context.globalState.update("lastVersion", currentVersion);
         context.workspaceState.update("hasShownInSession", true);
     }
