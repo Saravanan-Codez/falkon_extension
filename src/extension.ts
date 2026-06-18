@@ -262,6 +262,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ─── Auto-open welcome page ────────────────────────────────────────────────
   const lastVersion = context.globalState.get<string>("lastVersion");
+  
+  // If version changes (update scenario), reset completion states so onboarding runs again
+  if (lastVersion && lastVersion !== currentVersion) {
+    context.globalState.update("falkon.walkthroughCompleted", undefined);
+    context.globalState.update("falkon.hasVerifiedCli", undefined);
+    context.globalState.update("falkon.hasOpenedSettings", undefined);
+  }
+
   const isCompleted = context.globalState.get<boolean>("falkon.walkthroughCompleted", false);
   if (!isCompleted && (!hasShownInSession || lastVersion !== currentVersion)) {
     hasShownInSession = true;
