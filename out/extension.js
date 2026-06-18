@@ -103,7 +103,7 @@ class FalkonDebugConfigurationProvider {
 }
 function checkFalkonInstallation(bar, showNotification) {
     return new Promise((resolve) => {
-        cp.exec("falkon -v", (error, stdout, stderr) => {
+        cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
             if (error) {
                 bar.text = `$(alert) Falkon: CLI Missing`;
                 bar.tooltip = `Falkon compiler not found in PATH. Click to verify.`;
@@ -283,7 +283,7 @@ function showWelcomeWebview(context) {
         }
     };
     // Perform initial background CLI check to update badge
-    cp.exec("falkon -v", (error, stdout, stderr) => {
+    cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
             updateCliStatusInWebview("missing");
         }
@@ -317,7 +317,7 @@ function showWelcomeWebview(context) {
                     if (isInstalled) {
                         context.globalState.update("falkon.hasVerifiedCli", true);
                         checkCompletionStatus(context);
-                        cp.exec("falkon -v", (error, stdout, stderr) => {
+                        cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
                             const version = stdout.trim() || stderr.trim() || "unknown";
                             updateCliStatusInWebview("ready", version);
                         });
@@ -340,15 +340,23 @@ function showWelcomeWebview(context) {
             case "createFile": {
                 // Complete walkthrough state
                 context.globalState.update("falkon.walkthroughCompleted", true);
-                // Create new main.flk
+                // Create new main.flk safely
                 let targetUri;
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (workspaceFolders && workspaceFolders.length > 0) {
                     const rootPath = workspaceFolders[0].uri.fsPath;
                     const filePath = path.join(rootPath, "main.flk");
                     const fileUri = vscode.Uri.file(filePath);
-                    const content = `# Falkon Source File\nprint("Hello from Falkon!")\n`;
-                    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
+                    // Safety Check: Check if main.flk already exists before writing
+                    try {
+                        await vscode.workspace.fs.stat(fileUri);
+                        // File exists, skip writing template to prevent data loss
+                    }
+                    catch {
+                        // File does not exist, safe to write template content
+                        const content = `# Falkon Source File\nprint("Hello from Falkon!")\n`;
+                        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
+                    }
                     targetUri = fileUri;
                 }
                 else {
@@ -383,7 +391,7 @@ function showWelcomeWebview(context) {
     }, undefined, context.subscriptions);
     // Sync settings configuration changes
     const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-        if (welcomePanel && e.affectsConfiguration("falkon.shortcutPreset")) {
+        if (welcomePanel && (e.affectsConfiguration("falkon.shortcutPreset") || e.affectsConfiguration("falkon.enableDebugIntercept"))) {
             const currentPreset = vscode.workspace
                 .getConfiguration("falkon")
                 .get("shortcutPreset", "f4");
