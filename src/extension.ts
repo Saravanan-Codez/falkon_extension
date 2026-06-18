@@ -5,6 +5,7 @@ import * as cp from "child_process";
 const FALKON_EXTENSIONS = new Set([".flk"]);
 let hasShownInSession = false;
 let statusBarItem: vscode.StatusBarItem | undefined;
+let welcomePanel: vscode.WebviewPanel | undefined;
 
 function isFalkonFile(fsPath: string): boolean {
   return FALKON_EXTENSIONS.has(path.extname(fsPath).toLowerCase());
@@ -222,13 +223,10 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Command: falkon.showWalkthrough
-  // The walkthrough ID "falkonWalkthrough" must match the "id" field in package.json exactly.
-  const WALKTHROUGH_ID = `${extensionId}#falkonWalkthrough`;
+  // Command: falkon.showWalkthrough (opens our custom welcome webview)
   context.subscriptions.push(
     vscode.commands.registerCommand("falkon.showWalkthrough", () => {
-      console.log(`Falkon: opening walkthrough "${WALKTHROUGH_ID}"`);
-      vscode.commands.executeCommand("workbench.action.openWalkthrough", WALKTHROUGH_ID, false);
+      showWelcomeWebview(context);
     })
   );
 
@@ -270,29 +268,436 @@ export function activate(context: vscode.ExtensionContext): void {
   // Silent CLI check on activation to set initial status bar state
   checkFalkonInstallation(statusBarItem, false);
 
-  // ─── Auto-open walkthrough ────────────────────────────────────────────────
-  // activationEvents includes "onStartupFinished" which guarantees:
-  //   1. All extension contribution points (including walkthroughs) are fully
-  //      registered in VS Code's getting-started service before this runs.
-  //   2. The workbench Welcome panel is initialised and ready.
-  //
-  // This activation event ALSO fires after VS Code restarts the extension host
-  // during a mid-session VSIX install, covering both first-install and reinstall.
-  //
-  // Condition: show on every new extension-host process (!hasShownInSession)
-  // OR when the extension version changes (update scenario).
-  // hasShownInSession is a module-level var, so it resets to false on every
-  // extension-host restart — meaning every install/reload shows the walkthrough.
+  // ─── Auto-open welcome page ────────────────────────────────────────────────
   const lastVersion = context.globalState.get<string>("lastVersion");
   if (!hasShownInSession || lastVersion !== currentVersion) {
     hasShownInSession = true;
     context.globalState.update("lastVersion", currentVersion);
-    console.log(`Falkon: scheduling walkthrough open with ID "${WALKTHROUGH_ID}"`);
+    console.log("Falkon: scheduling welcome page open");
     setTimeout(() => {
-      console.log(`Falkon: firing openWalkthrough "${WALKTHROUGH_ID}"`);
-      vscode.commands.executeCommand("workbench.action.openWalkthrough", WALKTHROUGH_ID, false);
+      console.log("Falkon: opening welcome page");
+      showWelcomeWebview(context);
     }, 1000);
   }
 }
 
 export function deactivate(): void {}
+
+function showWelcomeWebview(context: vscode.ExtensionContext) {
+  if (welcomePanel) {
+    welcomePanel.reveal(vscode.ViewColumn.One);
+    return;
+  }
+
+  welcomePanel = vscode.window.createWebviewPanel(
+    "falkonWelcome",
+    "Welcome to Falkon",
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [
+        vscode.Uri.file(path.join(context.extensionPath, "resources")),
+      ],
+    }
+  );
+
+  // Convert SVG paths to webview URIs
+  const welcomeSvgUri = welcomePanel.webview.asWebviewUri(
+    vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg"))
+  );
+  const verifyCliSvgUri = welcomePanel.webview.asWebviewUri(
+    vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg"))
+  );
+  const configureShortcutSvgUri = welcomePanel.webview.asWebviewUri(
+    vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "configure_shortcut.svg"))
+  );
+
+  // Load configuration
+  const config = vscode.workspace.getConfiguration("falkon");
+  const initialShortcutPreset = config.get<string>("shortcutPreset", "f4");
+
+  // Load initial HTML Content
+  welcomePanel.webview.html = getWelcomeHtml(
+    welcomeSvgUri,
+    verifyCliSvgUri,
+    configureShortcutSvgUri,
+    initialShortcutPreset
+  );
+
+  // Function to update CLI status inside webview
+  const updateCliStatusInWebview = (status: "ready" | "missing", version?: string) => {
+    if (welcomePanel) {
+      welcomePanel.webview.postMessage({
+        command: "updateCliStatus",
+        status: status,
+        version: version || "",
+      });
+    }
+  };
+
+  // Perform initial background CLI check to update badge
+  cp.exec("falkon -v", (error, stdout, stderr) => {
+    if (error) {
+      updateCliStatusInWebview("missing");
+    } else {
+      const version = stdout.trim() || stderr.trim() || "unknown";
+      updateCliStatusInWebview("ready", version);
+    }
+  });
+
+  // Handle messages from Webview
+  welcomePanel.webview.onDidReceiveMessage(
+    async (message) => {
+      switch (message.command) {
+        case "verifyCli": {
+          context.globalState.update("falkon.hasVerifiedCli", true);
+          // Spawn the verify terminal
+          const existing = vscode.window.terminals.find(
+            (t: vscode.Terminal) => t.name === "Falkon Check"
+          );
+          if (existing) { existing.dispose(); }
+          const isWindows = process.platform === "win32";
+          const checkTerminal = vscode.window.createTerminal({
+            name: "Falkon Check",
+            shellPath: isWindows ? "powershell.exe" : undefined,
+          });
+          checkTerminal.show(false);
+          checkTerminal.sendText("falkon -v");
+          
+          // Check installation and send back result
+          if (statusBarItem) {
+            const isInstalled = await checkFalkonInstallation(statusBarItem, true);
+            if (isInstalled) {
+              cp.exec("falkon -v", (error, stdout, stderr) => {
+                const version = stdout.trim() || stderr.trim() || "unknown";
+                updateCliStatusInWebview("ready", version);
+              });
+            } else {
+              updateCliStatusInWebview("missing");
+            }
+          }
+          break;
+        }
+        case "changeShortcut": {
+          const newPreset = message.preset;
+          await vscode.workspace
+            .getConfiguration("falkon")
+            .update("shortcutPreset", newPreset, vscode.ConfigurationTarget.Global);
+          context.globalState.update("falkon.hasOpenedSettings", true);
+          break;
+        }
+        case "createFile": {
+          // Create new main.flk
+          let targetUri: vscode.Uri | undefined;
+          const workspaceFolders = vscode.workspace.workspaceFolders;
+          if (workspaceFolders && workspaceFolders.length > 0) {
+            const rootPath = workspaceFolders[0].uri.fsPath;
+            const filePath = path.join(rootPath, "main.flk");
+            const fileUri = vscode.Uri.file(filePath);
+            const content = `# Falkon Source File\nprint("Hello from Falkon!")\n`;
+            await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
+            targetUri = fileUri;
+          } else {
+            // Open an untitled file
+            targetUri = vscode.Uri.parse("untitled:main.flk");
+          }
+          
+          if (targetUri) {
+            const doc = await vscode.workspace.openTextDocument(targetUri);
+            await vscode.window.showTextDocument(doc);
+          }
+
+          // Close the welcome page
+          if (welcomePanel) {
+            welcomePanel.dispose();
+          }
+          break;
+        }
+        case "close": {
+          if (welcomePanel) {
+            welcomePanel.dispose();
+          }
+          break;
+        }
+      }
+    },
+    undefined,
+    context.subscriptions
+  );
+
+  // Sync settings configuration changes
+  const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (welcomePanel && e.affectsConfiguration("falkon.shortcutPreset")) {
+      const currentPreset = vscode.workspace
+        .getConfiguration("falkon")
+        .get<string>("shortcutPreset", "f4");
+      welcomePanel.webview.postMessage({
+        command: "updateSettings",
+        shortcutPreset: currentPreset,
+      });
+    }
+  });
+
+  welcomePanel.onDidDispose(() => {
+    welcomePanel = undefined;
+    configListener.dispose();
+  });
+}
+
+function getWelcomeHtml(
+  welcomeSvgUri: vscode.Uri,
+  verifyCliSvgUri: vscode.Uri,
+  configureShortcutSvgUri: vscode.Uri,
+  initialShortcutPreset: string
+): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to Falkon</title>
+  <style>
+    body {
+      background-color: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+      font-size: var(--vscode-font-size, 13px);
+      padding: 40px 24px;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+      animation: fadeIn 0.8s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 48px;
+    }
+    .logo {
+      width: 128px;
+      height: 128px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin: 0 0 8px 0;
+      letter-spacing: -0.5px;
+    }
+    .subtitle {
+      font-size: 16px;
+      opacity: 0.8;
+      margin: 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+      margin-bottom: 48px;
+    }
+    .card {
+      background: var(--vscode-welcomePage-tileBackground, rgba(255, 255, 255, 0.03));
+      border: 1px solid var(--vscode-welcomePage-tileBorder, rgba(255, 255, 255, 0.08));
+      border-radius: 12px;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      position: relative;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: var(--vscode-focusBorder, #007fd4);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+    .card-icon {
+      width: 80px;
+      height: 80px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: 18px;
+      margin: 0 0 12px 0;
+      font-weight: 600;
+    }
+    .card p {
+      font-size: 13px;
+      line-height: 1.5;
+      opacity: 0.7;
+      margin: 0 0 24px 0;
+      flex-grow: 1;
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      font-size: 10px;
+      font-weight: bold;
+      border-radius: 20px;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-checking {
+      background-color: var(--vscode-statusBarItem-warningBackground, #c97a00);
+      color: var(--vscode-statusBarItem-warningForeground, #ffffff);
+    }
+    .badge-ready {
+      background-color: #00FF87;
+      color: #121214;
+    }
+    .badge-missing {
+      background-color: #FF5F56;
+      color: #ffffff;
+    }
+    .btn {
+      background-color: var(--vscode-button-background);
+      color: var(--vscode-button-foreground);
+      border: none;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      width: 100%;
+      transition: background-color 0.2s;
+      box-sizing: border-box;
+    }
+    .btn:hover {
+      background-color: var(--vscode-button-hoverBackground);
+    }
+    .btn-secondary {
+      background-color: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.08));
+      color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+    }
+    .btn-secondary:hover {
+      background-color: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.12));
+    }
+    .select-input {
+      background-color: var(--vscode-dropdown-background);
+      color: var(--vscode-dropdown-foreground);
+      border: 1px solid var(--vscode-dropdown-border, rgba(255, 255, 255, 0.15));
+      padding: 10px 12px;
+      font-size: 13px;
+      border-radius: 6px;
+      width: 100%;
+      cursor: pointer;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .footer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      padding-top: 32px;
+    }
+    .footer-btn {
+      max-width: 220px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img class="logo" src="${welcomeSvgUri}" alt="Falkon Logo" />
+      <h1>Welcome to Falkon</h1>
+      <p class="subtitle">Sleek, Python-compatible syntax highlighting and build tools for VS Code.</p>
+    </div>
+
+    <div class="grid">
+      <!-- Card 1: Compiler Check -->
+      <div class="card">
+        <img class="card-icon" src="${verifyCliSvgUri}" alt="CLI Check" />
+        <h2>Verify Compiler CLI</h2>
+        <span id="cli-badge" class="status-badge badge-checking">Checking...</span>
+        <p>The Falkon compiler (falkon) must be installed and added to your system's PATH configuration.</p>
+        <button id="btn-verify" class="btn">Run Verification</button>
+      </div>
+
+      <!-- Card 2: Configuration -->
+      <div class="card">
+        <img class="card-icon" src="${configureShortcutSvgUri}" alt="Shortcut" />
+        <h2>Build & Run Shortcut</h2>
+        <span style="height: 16px; margin-bottom: 16px;"></span> <!-- Spacer to align with badge -->
+        <p>Select your default keyboard shortcut preset to compile and execute Falkon files inside the editor.</p>
+        <select id="select-shortcut" class="select-input">
+          <option value="f4" ${initialShortcutPreset === "f4" ? "selected" : ""}>F4 (Default)</option>
+          <option value="ctrl+f5" ${initialShortcutPreset === "ctrl+f5" ? "selected" : ""}>Ctrl + F5</option>
+          <option value="f7" ${initialShortcutPreset === "f7" ? "selected" : ""}>F7</option>
+          <option value="none" ${initialShortcutPreset === "none" ? "selected" : ""}>None (Disabled)</option>
+        </select>
+      </div>
+
+      <!-- Card 3: New File -->
+      <div class="card">
+        <img class="card-icon" src="${welcomeSvgUri}" alt="Start Coding" />
+        <h2>Start Coding</h2>
+        <span style="height: 16px; margin-bottom: 16px;"></span> <!-- Spacer to align with badge -->
+        <p>Initialize a new workspace with a sample template file and start compiling your Falkon projects.</p>
+        <button id="btn-create-file" class="btn btn-secondary">Create main.flk</button>
+      </div>
+    </div>
+
+    <div class="footer">
+      <button id="btn-close" class="btn footer-btn">Finish Setup</button>
+    </div>
+  </div>
+
+  <script>
+    const vscode = acquireVsCodeApi();
+
+    document.getElementById('btn-verify').addEventListener('click', () => {
+      const badge = document.getElementById('cli-badge');
+      badge.className = 'status-badge badge-checking';
+      badge.innerText = 'Checking...';
+      vscode.postMessage({ command: 'verifyCli' });
+    });
+
+    document.getElementById('select-shortcut').addEventListener('change', (e) => {
+      vscode.postMessage({ command: 'changeShortcut', preset: e.target.value });
+    });
+
+    document.getElementById('btn-create-file').addEventListener('click', () => {
+      vscode.postMessage({ command: 'createFile' });
+    });
+
+    document.getElementById('btn-close').addEventListener('click', () => {
+      vscode.postMessage({ command: 'close' });
+    });
+
+    window.addEventListener('message', event => {
+      const message = event.data;
+      switch (message.command) {
+        case 'updateSettings':
+          document.getElementById('select-shortcut').value = message.shortcutPreset;
+          break;
+        case 'updateCliStatus':
+          const badge = document.getElementById('cli-badge');
+          if (message.status === 'ready') {
+            badge.className = 'status-badge badge-ready';
+            badge.innerText = 'Ready (' + message.version + ')';
+          } else {
+            badge.className = 'status-badge badge-missing';
+            badge.innerText = 'Missing CLI';
+          }
+          break;
+      }
+    });
+  </script>
+</body>
+</html>`;
+}
