@@ -282,23 +282,22 @@ function setupWelcomeWebview(panel, context) {
     // Load HTML Content with CSP source
     panel.webview.html = getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri, initialShortcutPreset, hasVerifiedCli, hasOpenedSettings, panel.webview.cspSource);
     // Function to update CLI status inside webview
-    const updateCliStatusInWebview = (status, version) => {
+    const updateCliStatusInWebview = (status, version, isVerification) => {
         panel.webview.postMessage({
             command: "updateCliStatus",
             status: status,
             version: version || "",
+            isVerification: !!isVerification
         });
     };
-    // Perform initial background CLI check to update badge
+    // Perform initial background CLI check to update badge silently (does NOT set isVerification = true)
     cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
-            updateCliStatusInWebview("missing");
+            updateCliStatusInWebview("missing", undefined, false);
         }
         else {
-            context.globalState.update("falkon.hasVerifiedCli", true);
-            checkCompletionStatus(context);
             const version = stdout.trim() || stderr.trim() || "unknown";
-            updateCliStatusInWebview("ready", version);
+            updateCliStatusInWebview("ready", version, false);
         }
     });
     // Handle messages from Webview
@@ -314,13 +313,34 @@ function setupWelcomeWebview(panel, context) {
                         checkCompletionStatus(context);
                         cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
                             const version = stdout.trim() || stderr.trim() || "unknown";
-                            updateCliStatusInWebview("ready", version);
+                            updateCliStatusInWebview("ready", version, true);
                         });
                     }
                     else {
-                        updateCliStatusInWebview("missing");
+                        updateCliStatusInWebview("missing", undefined, true);
                     }
                 }
+                break;
+            }
+            case "checkCliSilent": {
+                if (statusBarItem) {
+                    checkFalkonInstallation(statusBarItem, false).then((isInstalled) => {
+                        if (isInstalled) {
+                            cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
+                                const version = stdout.trim() || stderr.trim() || "unknown";
+                                updateCliStatusInWebview("ready", version, false);
+                            });
+                        }
+                        else {
+                            updateCliStatusInWebview("missing", undefined, false);
+                        }
+                    });
+                }
+                break;
+            }
+            case "shortcutInteracted": {
+                context.globalState.update("falkon.hasOpenedSettings", true);
+                checkCompletionStatus(context);
                 break;
             }
             case "changeShortcut": {
@@ -333,15 +353,13 @@ function setupWelcomeWebview(panel, context) {
                 break;
             }
             case "createFile": {
-                // Complete walkthrough state
-                context.globalState.update("falkon.walkthroughCompleted", true);
-                // Create new main.flk safely
+                // Create new hello.flk safely
                 const workspaceFolders = vscode.workspace.workspaceFolders;
                 if (workspaceFolders && workspaceFolders.length > 0) {
                     const rootPath = workspaceFolders[0].uri.fsPath;
-                    const filePath = path.join(rootPath, "main.flk");
+                    const filePath = path.join(rootPath, "hello.flk");
                     const fileUri = vscode.Uri.file(filePath);
-                    // Safety Check: Check if main.flk already exists before writing
+                    // Safety Check: Check if hello.flk already exists before writing
                     try {
                         await vscode.workspace.fs.stat(fileUri);
                         // File exists, skip writing template to prevent data loss
@@ -363,8 +381,6 @@ function setupWelcomeWebview(panel, context) {
                     });
                     await vscode.window.showTextDocument(doc);
                 }
-                // Close the welcome page
-                panel.dispose();
                 break;
             }
             case "close": {
@@ -401,10 +417,7 @@ function setupWelcomeWebview(panel, context) {
 }
 function showWelcomeWebview(context) {
     if (welcomePanel) {
-        welcomePanel.reveal(vscode.ViewColumn.One);
-        // Reload/Recover the HTML content and re-bind listeners in case it's in a broken/blank state
-        setupWelcomeWebview(welcomePanel, context);
-        return;
+        welcomePanel.dispose();
     }
     const panel = vscode.window.createWebviewPanel("falkonWelcome", "Welcome to Falkon", vscode.ViewColumn.One, {
         enableScripts: true,
@@ -682,7 +695,7 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
         <h2>Start Coding</h2>
         <span style="height: 16px; margin-bottom: 16px;"></span> <!-- Spacer to align with badge -->
         <p>Initialize a new workspace with a sample template file and start compiling your Falkon projects.</p>
-        <button id="btn-create-file" class="btn btn-secondary">Create main.flk</button>
+        <button id="btn-create-file" class="btn btn-secondary">Create hello.flk</button>
       </div>
     </div>
 
@@ -739,11 +752,22 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
       vscode.postMessage({ command: 'verifyCli' });
     });
 
-    document.getElementById('select-shortcut').addEventListener('change', (e) => {
-      isShortcutConfigured = true;
-      updateProgress();
+    const selectShortcut = document.getElementById('select-shortcut');
+    const markShortcutConfigured = () => {
+      if (!isShortcutConfigured) {
+        isShortcutConfigured = true;
+        updateProgress();
+        vscode.postMessage({ command: 'shortcutInteracted' });
+      }
+    };
+
+    selectShortcut.addEventListener('change', (e) => {
+      markShortcutConfigured();
       vscode.postMessage({ command: 'changeShortcut', preset: e.target.value });
     });
+
+    selectShortcut.addEventListener('click', markShortcutConfigured);
+    selectShortcut.addEventListener('focus', markShortcutConfigured);
 
     document.getElementById('btn-create-file').addEventListener('click', () => {
       vscode.postMessage({ command: 'createFile' });
@@ -772,7 +796,7 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
             badge.className = 'status-badge badge-checking';
             badge.innerText = 'Checking...';
           }
-          vscode.postMessage({ command: 'verifyCli' });
+          vscode.postMessage({ command: 'checkCliSilent' });
           updateProgress();
           break;
         }
@@ -787,11 +811,15 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
             if (message.status === 'ready') {
               badge.className = 'status-badge badge-ready';
               badge.innerText = 'Ready (' + message.version + ')';
-              isCliReady = true;
+              if (message.isVerification) {
+                isCliReady = true;
+              }
             } else {
               badge.className = 'status-badge badge-missing';
               badge.innerText = 'Missing CLI';
-              isCliReady = false;
+              if (message.isVerification) {
+                isCliReady = false;
+              }
             }
           }
           updateProgress();
