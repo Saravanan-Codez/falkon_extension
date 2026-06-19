@@ -86,6 +86,15 @@ async function buildAndRun(document) {
     const fullCmd = isWindows
         ? `${buildCmd} ; if ($LASTEXITCODE -eq 0) { ${runCmd} }`
         : `${buildCmd} && ${runCmd}`;
+    // Show status bar feedback for compilation/running
+    const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    statusBarItem.text = `$(sync~spin) Falkon: Building & Running "${path.basename(filePath)}"...`;
+    statusBarItem.tooltip = "Click to focus build terminal";
+    statusBarItem.command = "workbench.action.terminal.focus";
+    statusBarItem.show();
+    setTimeout(() => {
+        statusBarItem.dispose();
+    }, 4000);
     terminal.sendText(fullCmd);
 }
 class FalkonDebugConfigurationProvider {
@@ -489,6 +498,11 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
       width: 120px;
       height: 120px;
       margin-bottom: 20px;
+      border-radius: 50%;
+      border: 3px solid rgba(138, 43, 226, 0.4);
+      box-shadow: 0 0 20px rgba(138, 43, 226, 0.3);
+      object-fit: cover;
+      overflow: hidden;
       filter: drop-shadow(0 8px 16px rgba(138, 43, 226, 0.25));
       animation: float 4s ease-in-out infinite;
     }
@@ -621,6 +635,13 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
       margin-bottom: 20px;
       transition: transform 0.4s ease;
       filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+    }
+    .logo-icon {
+      border-radius: 50%;
+      border: 2px solid rgba(138, 43, 226, 0.4);
+      box-shadow: 0 0 10px rgba(138, 43, 226, 0.3);
+      object-fit: cover;
+      overflow: hidden;
     }
     .card:hover .card-icon {
       transform: scale(1.08);
@@ -779,7 +800,7 @@ function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri,
 
       <!-- Card 3: New File -->
       <div class="card">
-        <img class="card-icon" src="${welcomeSvgUri}" alt="Start Coding" />
+        <img class="card-icon logo-icon" src="${welcomeSvgUri}" alt="Start Coding" />
         <h2>Start Coding</h2>
         <span style="height: 16px; margin-bottom: 16px;"></span> <!-- Spacer to align with badge -->
         <p>Initialize a new workspace with a sample template file and start compiling your Falkon projects.</p>
