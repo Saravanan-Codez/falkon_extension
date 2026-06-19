@@ -3,4 +3,7 @@ node_modules
 .env
 .npm-cache/
 *.exe
-
+out/
+.installed_marker
+.DS_Store
+Thumbs.db
