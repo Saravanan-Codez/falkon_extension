@@ -34,11 +34,20 @@ async function buildAndRun(document: vscode.TextDocument): Promise<void> {
   if (existingTerminal) {
     existingTerminal.dispose();
   }
-  const terminal = vscode.window.createTerminal({
-    name: "Falkon Run",
-    cwd: folder,
-    shellPath: isWindows ? "powershell.exe" : undefined,
-  });
+  let terminal: vscode.Terminal;
+  try {
+    terminal = vscode.window.createTerminal({
+      name: "Falkon Run",
+      cwd: folder,
+      shellPath: isWindows ? "powershell.exe" : undefined,
+    });
+  } catch (error) {
+    console.warn("Falkon: Failed to create terminal with powershell.exe, falling back to default shell.", error);
+    terminal = vscode.window.createTerminal({
+      name: "Falkon Run",
+      cwd: folder,
+    });
+  }
 
   terminal.show(true);
 
@@ -189,17 +198,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("falkon.checkCli", async () => {
       context.globalState.update("falkon.hasVerifiedCli", true);
       checkCompletionStatus(context);
-      const existing = vscode.window.terminals.find(
-        (t: vscode.Terminal) => t.name === "Falkon Check"
-      );
-      if (existing) { existing.dispose(); }
-      const isWindows = process.platform === "win32";
-      const checkTerminal = vscode.window.createTerminal({
-        name: "Falkon Check",
-        shellPath: isWindows ? "powershell.exe" : undefined,
-      });
-      checkTerminal.show(false);
-      checkTerminal.sendText("falkon -v");
       if (statusBarItem) {
         await checkFalkonInstallation(statusBarItem, true);
       }
@@ -232,6 +230,8 @@ export function activate(context: vscode.ExtensionContext): void {
       hasPromptedThisSession = false;
       if (welcomePanel) {
         welcomePanel.webview.postMessage({ command: "resetProgress" });
+      } else {
+        showWelcomeWebview(context);
       }
       vscode.window.showInformationMessage("Falkon onboarding state has been reset.");
     })
@@ -362,19 +362,6 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
       switch (message.command) {
         case "verifyCli": {
           context.globalState.update("falkon.hasVerifiedCli", true);
-          // Spawn the verify terminal
-          const existing = vscode.window.terminals.find(
-            (t: vscode.Terminal) => t.name === "Falkon Check"
-          );
-          if (existing) { existing.dispose(); }
-          const isWindows = process.platform === "win32";
-          const checkTerminal = vscode.window.createTerminal({
-            name: "Falkon Check",
-            shellPath: isWindows ? "powershell.exe" : undefined,
-          });
-          checkTerminal.show(false);
-          checkTerminal.sendText("falkon -v");
-          
           // Check installation and send back result
           if (statusBarItem) {
             const isInstalled = await checkFalkonInstallation(statusBarItem, true);
@@ -405,7 +392,6 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
           context.globalState.update("falkon.walkthroughCompleted", true);
           
           // Create new main.flk safely
-          let targetUri: vscode.Uri | undefined;
           const workspaceFolders = vscode.workspace.workspaceFolders;
           if (workspaceFolders && workspaceFolders.length > 0) {
             const rootPath = workspaceFolders[0].uri.fsPath;
@@ -421,17 +407,18 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
               const content = `# Falkon Source File\nprint("Hello from Falkon!")\n`;
               await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
             }
-            targetUri = fileUri;
+            const doc = await vscode.workspace.openTextDocument(fileUri);
+            await vscode.window.showTextDocument(doc);
           } else {
-            // Open an untitled file
-            targetUri = vscode.Uri.parse("untitled:main.flk");
-          }
-          
-          if (targetUri) {
-            const doc = await vscode.workspace.openTextDocument(targetUri);
+            // Open an untitled file with default content
+            const content = `# Falkon Source File\nprint("Hello from Falkon!")\n`;
+            const doc = await vscode.workspace.openTextDocument({
+              content: content,
+              language: "falkon"
+            });
             await vscode.window.showTextDocument(doc);
           }
-
+          
           // Close the welcome page
           if (welcomePanel) {
             welcomePanel.dispose();
