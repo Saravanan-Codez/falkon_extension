@@ -38,6 +38,7 @@ exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const path = __importStar(require("path"));
 const cp = __importStar(require("child_process"));
+const fs = __importStar(require("fs"));
 const FALKON_EXTENSIONS = new Set([".flk"]);
 let hasShownInSession = false;
 let statusBarItem;
@@ -138,6 +139,24 @@ function checkFalkonInstallation(bar, showNotification) {
 }
 function activate(context) {
     console.log("Falkon extension activating...");
+    const markerPath = path.join(context.extensionPath, ".installed_marker");
+    let isFreshInstall = false;
+    try {
+        if (!fs.existsSync(markerPath)) {
+            isFreshInstall = true;
+            fs.writeFileSync(markerPath, "installed", "utf8");
+        }
+    }
+    catch (err) {
+        console.error("Falkon: Failed to check/write install marker", err);
+    }
+    if (isFreshInstall) {
+        console.log("Falkon: Fresh installation detected. Resetting onboarding state...");
+        context.globalState.update("falkon.hasVerifiedCli", undefined);
+        context.globalState.update("falkon.hasOpenedSettings", undefined);
+        context.globalState.update("falkon.walkthroughCompleted", undefined);
+        context.globalState.update("falkon.walkthroughPromptDismissed", undefined);
+    }
     // context.extension is guaranteed available in VS Code 1.74+ (we require 1.90+).
     // Using it directly is the most reliable way to get the exact extension ID and
     // version without path-comparison heuristics that can fail on Windows.
