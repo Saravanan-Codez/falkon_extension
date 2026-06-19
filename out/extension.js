@@ -290,7 +290,7 @@ function deactivate() { }
 function setupWelcomeWebview(panel, context) {
     welcomePanel = panel;
     // Convert SVG paths to webview URIs
-    const welcomeSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg")));
+    const welcomeSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "falkon 128x128.svg")));
     const verifyCliSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg")));
     const configureShortcutSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "configure_shortcut.svg")));
     // Load configuration
@@ -442,7 +442,7 @@ function showWelcomeWebview(context) {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-            vscode.Uri.file(path.join(context.extensionPath, "resources")),
+            context.extensionUri,
         ],
     });
     setupWelcomeWebview(panel, context);

@@ -321,7 +321,7 @@ function setupWelcomeWebview(panel: vscode.WebviewPanel, context: vscode.Extensi
 
   // Convert SVG paths to webview URIs
   const welcomeSvgUri = panel.webview.asWebviewUri(
-    vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg"))
+    vscode.Uri.file(path.join(context.extensionPath, "falkon 128x128.svg"))
   );
   const verifyCliSvgUri = panel.webview.asWebviewUri(
     vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg"))
@@ -498,7 +498,7 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
       enableScripts: true,
       retainContextWhenHidden: true,
       localResourceRoots: [
-        vscode.Uri.file(path.join(context.extensionPath, "resources")),
+        context.extensionUri,
       ],
     }
   );
