@@ -519,14 +519,17 @@ function getWelcomeHtml(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; script-src 'unsafe-inline' ${cspSource}; style-src 'unsafe-inline' ${cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; script-src 'unsafe-inline' ${cspSource}; style-src 'unsafe-inline' ${cspSource} https://fonts.googleapis.com https://fonts.gstatic.com; font-src https://fonts.gstatic.com;">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to Falkon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body {
       background-color: var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
-      font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+      font-family: 'Outfit', var(--vscode-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
       font-size: var(--vscode-font-size, 13px);
       padding: 40px 24px;
       margin: 0;
@@ -537,132 +540,182 @@ function getWelcomeHtml(
       box-sizing: border-box;
     }
     .container {
-      max-width: 800px;
+      max-width: 860px;
       width: 100%;
-      animation: fadeIn 0.8s ease-out;
+      animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1);
     }
     @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(12px); }
+      from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
     }
     .header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 40px;
     }
     .logo {
-      width: 110px;
-      height: 110px;
-      margin-bottom: 16px;
+      width: 120px;
+      height: 120px;
+      margin-bottom: 20px;
+      filter: drop-shadow(0 8px 16px rgba(138, 43, 226, 0.25));
+      animation: float 4s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-6px) rotate(1deg); }
     }
     h1 {
-      font-size: 32px;
-      font-weight: 700;
-      margin: 0 0 8px 0;
+      font-size: 36px;
+      font-weight: 800;
+      margin: 0 0 12px 0;
       letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #A855F7, #06B6D4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
     .subtitle {
-      font-size: 15px;
-      opacity: 0.8;
-      margin: 0;
+      font-size: 16px;
+      opacity: 0.75;
+      margin: 0 auto;
+      max-width: 600px;
+      line-height: 1.5;
     }
     .progress-section {
       background: var(--vscode-welcomePage-tileBackground, rgba(255, 255, 255, 0.02));
       border: 1px solid var(--vscode-welcomePage-tileBorder, rgba(255, 255, 255, 0.08));
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-bottom: 32px;
+      backdrop-filter: blur(10px);
+      border-radius: 16px;
+      padding: 24px 32px;
+      margin-bottom: 40px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     }
     .progress-text {
-      font-size: 13px;
-      font-weight: 600;
-      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 12px;
       display: flex;
       justify-content: space-between;
+      letter-spacing: 0.5px;
     }
     .progress-bar {
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
       overflow: hidden;
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
     .progress-fill {
       height: 100%;
-      background: linear-gradient(90deg, #8A2BE2, #00FFFF);
+      background: linear-gradient(90deg, #8A2BE2, #00FFFF, #8A2BE2);
+      background-size: 200% auto;
       width: 0%;
-      transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      animation: gradientShift 4s linear infinite;
+    }
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
     }
     .checklist {
       display: flex;
-      gap: 28px;
+      gap: 36px;
       justify-content: center;
     }
     .check-item {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       font-size: 13px;
-      opacity: 0.5;
-      transition: opacity 0.3s, color 0.3s;
+      opacity: 0.4;
+      transition: all 0.4s ease;
     }
     .check-item.completed {
       opacity: 1;
       color: #00FF87;
       font-weight: 600;
+      text-shadow: 0 0 10px rgba(0, 255, 135, 0.2);
     }
     .check-item .check-icon {
-      font-size: 14px;
+      font-size: 16px;
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 28px;
       margin-bottom: 40px;
     }
     .card {
       background: var(--vscode-welcomePage-tileBackground, rgba(255, 255, 255, 0.03));
       border: 1px solid var(--vscode-welcomePage-tileBorder, rgba(255, 255, 255, 0.08));
-      border-radius: 12px;
-      padding: 28px 24px;
+      border-radius: 16px;
+      padding: 36px 28px;
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
-      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(138, 43, 226, 0.03) 0%, rgba(0, 255, 255, 0.03) 100%);
+      opacity: 0;
+      transition: opacity 0.4s ease;
+      z-index: 0;
+    }
+    .card:hover::before {
+      opacity: 1;
+    }
+    .card > * {
+      position: relative;
+      z-index: 1;
     }
     .card:hover {
-      transform: translateY(-4px);
-      border-color: var(--vscode-focusBorder, #007fd4);
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      transform: translateY(-8px);
+      border-color: rgba(0, 255, 255, 0.35);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.25), 0 0 20px rgba(138, 43, 226, 0.1);
     }
     .card-icon {
-      width: 76px;
-      height: 76px;
-      margin-bottom: 16px;
+      width: 80px;
+      height: 80px;
+      margin-bottom: 20px;
+      transition: transform 0.4s ease;
+      filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.15));
+    }
+    .card:hover .card-icon {
+      transform: scale(1.08);
     }
     .card h2 {
-      font-size: 17px;
-      margin: 0 0 10px 0;
-      font-weight: 600;
+      font-size: 18px;
+      margin: 0 0 12px 0;
+      font-weight: 700;
+      letter-spacing: -0.25px;
     }
     .card p {
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       opacity: 0.7;
-      margin: 0 0 20px 0;
+      margin: 0 0 24px 0;
       flex-grow: 1;
     }
     .status-badge {
       display: inline-flex;
       align-items: center;
-      padding: 4px 10px;
-      font-size: 9px;
-      font-weight: bold;
-      border-radius: 20px;
-      margin-bottom: 16px;
+      padding: 6px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 30px;
+      margin-bottom: 20px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.75px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
     }
     .badge-checking {
       background-color: var(--vscode-statusBarItem-warningBackground, #c97a00);
@@ -671,56 +724,72 @@ function getWelcomeHtml(
     .badge-ready {
       background-color: #00FF87;
       color: #121214;
+      box-shadow: 0 0 10px rgba(0, 255, 135, 0.3);
     }
     .badge-missing {
       background-color: #FF5F56;
       color: #ffffff;
     }
     .btn {
-      background-color: var(--vscode-button-background);
+      background: linear-gradient(135deg, var(--vscode-button-background) 0%, rgba(138, 43, 226, 0.85) 100%);
       color: var(--vscode-button-foreground);
       border: none;
-      padding: 10px 16px;
+      padding: 12px 20px;
       font-size: 13px;
-      font-weight: 600;
-      border-radius: 6px;
+      font-weight: 700;
+      border-radius: 8px;
       cursor: pointer;
       width: 100%;
-      transition: background-color 0.2s, box-shadow 0.3s;
+      transition: all 0.3s ease;
       box-sizing: border-box;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
     .btn:hover {
-      background-color: var(--vscode-button-hoverBackground);
+      filter: brightness(1.15);
+      box-shadow: 0 6px 20px rgba(138, 43, 226, 0.35);
+      transform: translateY(-1px);
+    }
+    .btn:active {
+      transform: translateY(1px);
     }
     .btn-secondary {
-      background-color: var(--vscode-button-secondaryBackground, rgba(255, 255, 255, 0.08));
+      background: rgba(255, 255, 255, 0.05);
       color: var(--vscode-button-secondaryForeground, var(--vscode-editor-foreground));
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: none;
     }
     .btn-secondary:hover {
-      background-color: var(--vscode-button-secondaryHoverBackground, rgba(255, 255, 255, 0.12));
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     }
     .select-input {
       background-color: var(--vscode-dropdown-background);
       color: var(--vscode-dropdown-foreground);
       border: 1px solid var(--vscode-dropdown-border, rgba(255, 255, 255, 0.15));
-      padding: 10px 12px;
+      padding: 12px 14px;
       font-size: 13px;
-      border-radius: 6px;
+      border-radius: 8px;
       width: 100%;
       cursor: pointer;
       outline: none;
       box-sizing: border-box;
+      transition: all 0.3s ease;
+    }
+    .select-input:hover, .select-input:focus {
+      border-color: var(--vscode-focusBorder, #007fd4);
+      box-shadow: 0 0 8px rgba(0, 127, 212, 0.25);
     }
     .footer {
       display: flex;
       justify-content: center;
       align-items: center;
       border-top: 1px solid rgba(255, 255, 255, 0.08);
-      padding-top: 32px;
-      gap: 16px;
+      padding-top: 40px;
+      gap: 20px;
     }
     .footer-btn {
-      max-width: 180px;
+      max-width: 200px;
     }
   </style>
 </head>
