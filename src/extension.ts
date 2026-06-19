@@ -283,37 +283,30 @@ export function activate(context: vscode.ExtensionContext): void {
       showWelcomeWebview(context);
     }, 1000);
   }
+
+  // Register Webview Serializer to restore the Welcome tab on VS Code restart
+  if (vscode.window.registerWebviewPanelSerializer) {
+    vscode.window.registerWebviewPanelSerializer("falkonWelcome", {
+      async deserializeWebviewPanel(webviewPanel: vscode.WebviewPanel, state: any) {
+        setupWelcomeWebview(webviewPanel, context);
+      }
+    });
+  }
 }
 
 export function deactivate(): void {}
 
-function showWelcomeWebview(context: vscode.ExtensionContext) {
-  if (welcomePanel) {
-    welcomePanel.reveal(vscode.ViewColumn.One);
-    return;
-  }
-
-  welcomePanel = vscode.window.createWebviewPanel(
-    "falkonWelcome",
-    "Welcome to Falkon",
-    vscode.ViewColumn.One,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [
-        vscode.Uri.file(path.join(context.extensionPath, "resources")),
-      ],
-    }
-  );
+function setupWelcomeWebview(panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
+  welcomePanel = panel;
 
   // Convert SVG paths to webview URIs
-  const welcomeSvgUri = welcomePanel.webview.asWebviewUri(
+  const welcomeSvgUri = panel.webview.asWebviewUri(
     vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg"))
   );
-  const verifyCliSvgUri = welcomePanel.webview.asWebviewUri(
+  const verifyCliSvgUri = panel.webview.asWebviewUri(
     vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg"))
   );
-  const configureShortcutSvgUri = welcomePanel.webview.asWebviewUri(
+  const configureShortcutSvgUri = panel.webview.asWebviewUri(
     vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "configure_shortcut.svg"))
   );
 
@@ -323,25 +316,24 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
   const hasVerifiedCli = context.globalState.get<boolean>("falkon.hasVerifiedCli", false);
   const hasOpenedSettings = context.globalState.get<boolean>("falkon.hasOpenedSettings", false);
 
-  // Load initial HTML Content
-  welcomePanel.webview.html = getWelcomeHtml(
+  // Load HTML Content with CSP source
+  panel.webview.html = getWelcomeHtml(
     welcomeSvgUri,
     verifyCliSvgUri,
     configureShortcutSvgUri,
     initialShortcutPreset,
     hasVerifiedCli,
-    hasOpenedSettings
+    hasOpenedSettings,
+    panel.webview.cspSource
   );
 
   // Function to update CLI status inside webview
   const updateCliStatusInWebview = (status: "ready" | "missing", version?: string) => {
-    if (welcomePanel) {
-      welcomePanel.webview.postMessage({
-        command: "updateCliStatus",
-        status: status,
-        version: version || "",
-      });
-    }
+    panel.webview.postMessage({
+      command: "updateCliStatus",
+      status: status,
+      version: version || "",
+    });
   };
 
   // Perform initial background CLI check to update badge
@@ -357,7 +349,7 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
   });
 
   // Handle messages from Webview
-  welcomePanel.webview.onDidReceiveMessage(
+  const messageListener = panel.webview.onDidReceiveMessage(
     async (message) => {
       switch (message.command) {
         case "verifyCli": {
@@ -420,23 +412,17 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
           }
           
           // Close the welcome page
-          if (welcomePanel) {
-            welcomePanel.dispose();
-          }
+          panel.dispose();
           break;
         }
         case "close": {
           context.globalState.update("falkon.walkthroughCompleted", true);
-          if (welcomePanel) {
-            welcomePanel.dispose();
-          }
+          panel.dispose();
           break;
         }
         case "skip": {
           context.globalState.update("falkon.walkthroughCompleted", true);
-          if (welcomePanel) {
-            welcomePanel.dispose();
-          }
+          panel.dispose();
           break;
         }
       }
@@ -447,21 +433,48 @@ function showWelcomeWebview(context: vscode.ExtensionContext) {
 
   // Sync settings configuration changes
   const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-    if (welcomePanel && (e.affectsConfiguration("falkon.shortcutPreset") || e.affectsConfiguration("falkon.enableDebugIntercept"))) {
+    if (e.affectsConfiguration("falkon.shortcutPreset") || e.affectsConfiguration("falkon.enableDebugIntercept")) {
       const currentPreset = vscode.workspace
         .getConfiguration("falkon")
         .get<string>("shortcutPreset", "f4");
-      welcomePanel.webview.postMessage({
+      panel.webview.postMessage({
         command: "updateSettings",
         shortcutPreset: currentPreset,
       });
     }
   });
 
-  welcomePanel.onDidDispose(() => {
-    welcomePanel = undefined;
+  panel.onDidDispose(() => {
+    if (welcomePanel === panel) {
+      welcomePanel = undefined;
+    }
+    messageListener.dispose();
     configListener.dispose();
   });
+}
+
+function showWelcomeWebview(context: vscode.ExtensionContext) {
+  if (welcomePanel) {
+    welcomePanel.reveal(vscode.ViewColumn.One);
+    // Reload/Recover the HTML content and re-bind listeners in case it's in a broken/blank state
+    setupWelcomeWebview(welcomePanel, context);
+    return;
+  }
+
+  const panel = vscode.window.createWebviewPanel(
+    "falkonWelcome",
+    "Welcome to Falkon",
+    vscode.ViewColumn.One,
+    {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [
+        vscode.Uri.file(path.join(context.extensionPath, "resources")),
+      ],
+    }
+  );
+
+  setupWelcomeWebview(panel, context);
 }
 
 function getWelcomeHtml(
@@ -470,12 +483,14 @@ function getWelcomeHtml(
   configureShortcutSvgUri: vscode.Uri,
   initialShortcutPreset: string,
   initialVerifiedCli: boolean,
-  initialOpenedSettings: boolean
+  initialOpenedSettings: boolean,
+  cspSource: string
 ): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; script-src 'unsafe-inline' ${cspSource}; style-src 'unsafe-inline' ${cspSource};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to Falkon</title>
   <style>

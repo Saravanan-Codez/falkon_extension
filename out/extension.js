@@ -258,40 +258,36 @@ function activate(context) {
             showWelcomeWebview(context);
         }, 1000);
     }
+    // Register Webview Serializer to restore the Welcome tab on VS Code restart
+    if (vscode.window.registerWebviewPanelSerializer) {
+        vscode.window.registerWebviewPanelSerializer("falkonWelcome", {
+            async deserializeWebviewPanel(webviewPanel, state) {
+                setupWelcomeWebview(webviewPanel, context);
+            }
+        });
+    }
 }
 function deactivate() { }
-function showWelcomeWebview(context) {
-    if (welcomePanel) {
-        welcomePanel.reveal(vscode.ViewColumn.One);
-        return;
-    }
-    welcomePanel = vscode.window.createWebviewPanel("falkonWelcome", "Welcome to Falkon", vscode.ViewColumn.One, {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-            vscode.Uri.file(path.join(context.extensionPath, "resources")),
-        ],
-    });
+function setupWelcomeWebview(panel, context) {
+    welcomePanel = panel;
     // Convert SVG paths to webview URIs
-    const welcomeSvgUri = welcomePanel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg")));
-    const verifyCliSvgUri = welcomePanel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg")));
-    const configureShortcutSvgUri = welcomePanel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "configure_shortcut.svg")));
+    const welcomeSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "welcome.svg")));
+    const verifyCliSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "verify_cli.svg")));
+    const configureShortcutSvgUri = panel.webview.asWebviewUri(vscode.Uri.file(path.join(context.extensionPath, "resources", "images", "configure_shortcut.svg")));
     // Load configuration
     const config = vscode.workspace.getConfiguration("falkon");
     const initialShortcutPreset = config.get("shortcutPreset", "f4");
     const hasVerifiedCli = context.globalState.get("falkon.hasVerifiedCli", false);
     const hasOpenedSettings = context.globalState.get("falkon.hasOpenedSettings", false);
-    // Load initial HTML Content
-    welcomePanel.webview.html = getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri, initialShortcutPreset, hasVerifiedCli, hasOpenedSettings);
+    // Load HTML Content with CSP source
+    panel.webview.html = getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri, initialShortcutPreset, hasVerifiedCli, hasOpenedSettings, panel.webview.cspSource);
     // Function to update CLI status inside webview
     const updateCliStatusInWebview = (status, version) => {
-        if (welcomePanel) {
-            welcomePanel.webview.postMessage({
-                command: "updateCliStatus",
-                status: status,
-                version: version || "",
-            });
-        }
+        panel.webview.postMessage({
+            command: "updateCliStatus",
+            status: status,
+            version: version || "",
+        });
     };
     // Perform initial background CLI check to update badge
     cp.exec("falkon -v", { timeout: 5000 }, (error, stdout, stderr) => {
@@ -306,7 +302,7 @@ function showWelcomeWebview(context) {
         }
     });
     // Handle messages from Webview
-    welcomePanel.webview.onDidReceiveMessage(async (message) => {
+    const messageListener = panel.webview.onDidReceiveMessage(async (message) => {
         switch (message.command) {
             case "verifyCli": {
                 context.globalState.update("falkon.hasVerifiedCli", true);
@@ -368,49 +364,63 @@ function showWelcomeWebview(context) {
                     await vscode.window.showTextDocument(doc);
                 }
                 // Close the welcome page
-                if (welcomePanel) {
-                    welcomePanel.dispose();
-                }
+                panel.dispose();
                 break;
             }
             case "close": {
                 context.globalState.update("falkon.walkthroughCompleted", true);
-                if (welcomePanel) {
-                    welcomePanel.dispose();
-                }
+                panel.dispose();
                 break;
             }
             case "skip": {
                 context.globalState.update("falkon.walkthroughCompleted", true);
-                if (welcomePanel) {
-                    welcomePanel.dispose();
-                }
+                panel.dispose();
                 break;
             }
         }
     }, undefined, context.subscriptions);
     // Sync settings configuration changes
     const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
-        if (welcomePanel && (e.affectsConfiguration("falkon.shortcutPreset") || e.affectsConfiguration("falkon.enableDebugIntercept"))) {
+        if (e.affectsConfiguration("falkon.shortcutPreset") || e.affectsConfiguration("falkon.enableDebugIntercept")) {
             const currentPreset = vscode.workspace
                 .getConfiguration("falkon")
                 .get("shortcutPreset", "f4");
-            welcomePanel.webview.postMessage({
+            panel.webview.postMessage({
                 command: "updateSettings",
                 shortcutPreset: currentPreset,
             });
         }
     });
-    welcomePanel.onDidDispose(() => {
-        welcomePanel = undefined;
+    panel.onDidDispose(() => {
+        if (welcomePanel === panel) {
+            welcomePanel = undefined;
+        }
+        messageListener.dispose();
         configListener.dispose();
     });
 }
-function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri, initialShortcutPreset, initialVerifiedCli, initialOpenedSettings) {
+function showWelcomeWebview(context) {
+    if (welcomePanel) {
+        welcomePanel.reveal(vscode.ViewColumn.One);
+        // Reload/Recover the HTML content and re-bind listeners in case it's in a broken/blank state
+        setupWelcomeWebview(welcomePanel, context);
+        return;
+    }
+    const panel = vscode.window.createWebviewPanel("falkonWelcome", "Welcome to Falkon", vscode.ViewColumn.One, {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+            vscode.Uri.file(path.join(context.extensionPath, "resources")),
+        ],
+    });
+    setupWelcomeWebview(panel, context);
+}
+function getWelcomeHtml(welcomeSvgUri, verifyCliSvgUri, configureShortcutSvgUri, initialShortcutPreset, initialVerifiedCli, initialOpenedSettings, cspSource) {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${cspSource} https:; script-src 'unsafe-inline' ${cspSource}; style-src 'unsafe-inline' ${cspSource};">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Welcome to Falkon</title>
   <style>
